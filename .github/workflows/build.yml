@@ -55,3 +55,18 @@ jobs:
           files: RCEAnimationMigrator.rbxm
           fail_on_unmatched_files: true
           generate_release_notes: true
+          body: |
+            ## Install as a Local Plugin -- do not publish to the Marketplace
+
+            **`RCEAnimationMigrator.rbxm` is not a plugin by itself and will not work if published
+            through Roblox Studio's "Configure/Publish as Plugin" flow to the Plugin Marketplace.**
+            It must be installed as a **Local Plugin**:
+
+            1. Download `RCEAnimationMigrator.rbxm` below.
+            2. In Roblox Studio, open any place and insert the file (right-click **Workspace** in
+               the Explorer -> **Insert from File...**, or drag-and-drop it in).
+            3. Right-click the inserted `RCEAnimationMigrator` item in the Explorer and choose
+               **Save as Local Plugin**.
+            4. Delete it from the place (it's now saved separately as a plugin) and restart Studio.
+
+            See the [README](../../blob/main/README.md) for full details and troubleshooting.
