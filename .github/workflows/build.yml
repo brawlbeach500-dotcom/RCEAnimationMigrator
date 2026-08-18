@@ -1,0 +1,57 @@
+name: Build Plugin
+
+# Builds RCEAnimationMigrator.rbxm with Rojo on every push/PR (as a build
+# check), and additionally publishes a GitHub Release containing ONLY that
+# .rbxm file whenever a tag matching v* is pushed.
+#
+# This built .rbxm is a Roblox model file, not a plugin by itself -- see the
+# README ("Important: this must be installed as a Local Plugin") for how to
+# turn it into a local plugin via Studio's "Save as Local Plugin".
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build .rbxm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rojo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p rojo-dl
+          gh release download --repo rojo-rbx/rojo --pattern '*linux-x86_64.zip' --dir rojo-dl --clobber
+          unzip -o rojo-dl/*.zip -d rojo-bin
+          sudo install -m 0755 rojo-bin/rojo /usr/local/bin/rojo
+          rojo --version
+
+      - name: Build plugin
+        run: rojo build default.project.json --output RCEAnimationMigrator.rbxm
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RCEAnimationMigrator
+          path: RCEAnimationMigrator.rbxm
+          if-no-files-found: error
+
+      - name: Create release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RCEAnimationMigrator.rbxm
+          fail_on_unmatched_files: true
+          generate_release_notes: true
