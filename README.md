@@ -260,16 +260,28 @@ is not designed to run that way. Uninstall the marketplace version and install i
 
 ---
 
-## Automated builds (GitHub Actions)
+## Automated builds & releases (GitHub Actions)
 
-`.github/workflows/build.yml` builds `RCEAnimationMigrator.rbxm` with Rojo on every push/PR (as a
-build check) and, whenever a tag matching `v*` (e.g. `v1.0.0`) is pushed, creates a GitHub Release
-with that `.rbxm` as the **only** attached file — see Option C above. To cut a release yourself:
+Three workflows live under `.github/workflows/`:
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+- **`build.yml`** — pure build check. Runs `rojo build` on every push (any branch) and PR to catch
+  build breakage. Doesn't tag or release anything.
+- **`release.yml`** — auto-versioning. **Every push to `main` automatically bumps the patch
+  version by one** (e.g. `v1.0.1` → `v1.0.2`), builds `RCEAnimationMigrator.rbxm`, and publishes it
+  as a GitHub Release with that `.rbxm` as the **only** attached file (see Option C above). You
+  don't need to tag anything yourself for normal changes.
+  - To push to `main` **without** cutting a release (e.g. a docs-only change), put
+    `[skip release]` anywhere in the commit message.
+  - To intentionally jump to a specific version instead of the automatic patch bump (a minor or
+    major release), push a tag yourself and that exact version is used instead:
+    ```bash
+    git tag v1.1.0
+    git push origin v1.1.0
+    ```
+- **`lint.yml`** — syntax/validity checks: `default.project.json` is valid JSON, every workflow
+  file is valid YAML and passes [actionlint](https://github.com/rhysd/actionlint), and
+  `src/init.server.lua` parses as valid Luau (via `luau-analyze`, checking for real syntax errors
+  only — it doesn't know Roblox's own globals like `game`/`plugin`, so it ignores those).
 
 ---
 
@@ -279,7 +291,9 @@ git push origin v1.0.0
 RCEAnimationMigrator/
 ├── .github/
 │   └── workflows/
-│       └── build.yml       # CI build + tagged-release automation
+│       ├── build.yml       # CI build check (every push/PR)
+│       ├── release.yml     # auto-versioning + tagged GitHub Releases
+│       └── lint.yml        # JSON/YAML/Luau syntax checks
 ├── default.project.json   # Rojo project manifest
 ├── src/
 │   └── init.server.lua    # entire plugin -- GUI + migration logic

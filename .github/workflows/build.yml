@@ -1,23 +1,13 @@
-name: Build Plugin
+name: Build Check
 
-# Builds RCEAnimationMigrator.rbxm with Rojo on every push/PR (as a build
-# check), and additionally publishes a GitHub Release containing ONLY that
-# .rbxm file whenever a tag matching v* is pushed.
-#
-# This built .rbxm is a Roblox model file, not a plugin by itself -- see the
-# README ("Important: this must be installed as a Local Plugin") for how to
-# turn it into a local plugin via Studio's "Save as Local Plugin".
+# Pure build validation: makes sure `rojo build` still succeeds. Runs on
+# every push (any branch) and PR. Does not tag or release anything -- see
+# release.yml for that.
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
   pull_request:
-    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -47,26 +37,3 @@ jobs:
           name: RCEAnimationMigrator
           path: RCEAnimationMigrator.rbxm
           if-no-files-found: error
-
-      - name: Create release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: RCEAnimationMigrator.rbxm
-          fail_on_unmatched_files: true
-          generate_release_notes: true
-          body: |
-            ## Install as a Local Plugin -- do not publish to the Marketplace
-
-            **`RCEAnimationMigrator.rbxm` is not a plugin by itself and will not work if published
-            through Roblox Studio's "Configure/Publish as Plugin" flow to the Plugin Marketplace.**
-            It must be installed as a **Local Plugin**:
-
-            1. Download `RCEAnimationMigrator.rbxm` below.
-            2. In Roblox Studio, open any place and insert the file (right-click **Workspace** in
-               the Explorer -> **Insert from File...**, or drag-and-drop it in).
-            3. Right-click the inserted `RCEAnimationMigrator` item in the Explorer and choose
-               **Save as Local Plugin**.
-            4. Delete it from the place (it's now saved separately as a plugin) and restart Studio.
-
-            See the [README](../../blob/main/README.md) for full details and troubleshooting.

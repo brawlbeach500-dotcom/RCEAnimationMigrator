@@ -1,0 +1,72 @@
+name: Lint
+
+# Syntax/validity checks that don't require a full Rojo build:
+#   - default.project.json is valid JSON
+#   - every workflow file under .github/workflows is valid YAML and passes
+#     actionlint (catches real GitHub Actions mistakes, e.g. bad expressions
+#     or unknown action inputs)
+#   - src/init.server.lua parses as valid Luau
+#
+# The Luau check only fails on genuine parse/syntax errors. It does NOT fail
+# on "unknown global"-style diagnostics for Roblox API globals like `game`,
+# `plugin`, or `Instance` -- this analyzer has no knowledge of Roblox's own
+# type definitions, so those are expected noise, not real problems.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Syntax & config checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate default.project.json
+        run: |
+          set -euo pipefail
+          python3 -m json.tool default.project.json > /dev/null
+          echo "OK: default.project.json is valid JSON"
+
+      - name: Validate workflow YAML
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          for f in .github/workflows/*.yml; do
+            python3 -c "import yaml; yaml.safe_load(open('$f')); print('OK:', '$f')"
+          done
+
+      - name: Lint workflows with actionlint
+        run: |
+          set -euo pipefail
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+      - name: Install Luau tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p luau-dl
+          gh release download --repo luau-lang/luau --pattern '*-ubuntu.zip' --dir luau-dl --clobber
+          unzip -o luau-dl/*.zip -d luau-bin
+          sudo install -m 0755 luau-bin/luau-analyze /usr/local/bin/luau-analyze
+
+      - name: Check Luau syntax (src/init.server.lua)
+        run: |
+          set +e
+          output="$(luau-analyze src/init.server.lua 2>&1)"
+          rc=$?
+          set -e
+          echo "$output"
+          if echo "$output" | grep -q "SyntaxError"; then
+            echo "::error::Luau syntax error detected in src/init.server.lua"
+            exit 1
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "Non-zero exit with no SyntaxError -- likely type/unknown-global diagnostics for Roblox API globals (game, plugin, Instance, etc.), not real syntax errors. Not failing the build on these."
+          fi
+          echo "No Luau syntax errors detected."

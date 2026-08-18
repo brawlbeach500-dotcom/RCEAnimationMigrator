@@ -1,0 +1,95 @@
+name: Release
+
+# Auto-versioning: every push to main bumps the patch version by one (e.g.
+# v1.0.1 -> v1.0.2), builds the plugin, and publishes it as a GitHub Release
+# containing only RCEAnimationMigrator.rbxm.
+#
+# - Put "[skip release]" anywhere in the commit message to push to main
+#   without cutting a release (e.g. for README/workflow-only changes).
+# - To intentionally jump to a specific version (a minor/major bump instead
+#   of the automatic patch bump), push a tag yourself:
+#     git tag v1.1.0 && git push origin v1.1.0
+#   That tag push builds and releases exactly that version instead.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Version + Release
+    runs-on: ubuntu-latest
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip release]'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine release tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+            echo "Manually pushed tag: $tag"
+          else
+            git fetch --tags --quiet || true
+            latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
+            if [ -z "$latest" ]; then
+              tag="v1.0.0"
+            else
+              ver="${latest#v}"
+              IFS='.' read -r major minor patch <<< "$ver"
+              patch=$((patch + 1))
+              tag="v${major}.${minor}.${patch}"
+            fi
+            echo "Auto-bumping version: ${latest:-<none>} -> $tag"
+            git tag "$tag"
+            git push origin "$tag"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rojo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p rojo-dl
+          gh release download --repo rojo-rbx/rojo --pattern '*linux-x86_64.zip' --dir rojo-dl --clobber
+          unzip -o rojo-dl/*.zip -d rojo-bin
+          sudo install -m 0755 rojo-bin/rojo /usr/local/bin/rojo
+          rojo --version
+
+      - name: Build plugin
+        run: rojo build default.project.json --output RCEAnimationMigrator.rbxm
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: RCEAnimationMigrator.rbxm
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            ## Install as a Local Plugin -- do not publish to the Marketplace
+
+            **`RCEAnimationMigrator.rbxm` is not a plugin by itself and will not work if published
+            through Roblox Studio's "Configure/Publish as Plugin" flow to the Plugin Marketplace.**
+            It must be installed as a **Local Plugin**:
+
+            1. Download `RCEAnimationMigrator.rbxm` below.
+            2. In Roblox Studio, open any place and insert the file (right-click **Workspace** in
+               the Explorer -> **Insert from File...**, or drag-and-drop it in).
+            3. Right-click the inserted `RCEAnimationMigrator` item in the Explorer and choose
+               **Save as Local Plugin**.
+            4. Delete it from the place (it's now saved separately as a plugin) and restart Studio.
+
+            See the [README](../../blob/main/README.md) for full details and troubleshooting.
