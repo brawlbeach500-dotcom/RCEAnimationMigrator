@@ -310,7 +310,7 @@ For projects using this Software, the following format is recommended:
 
 ```text
 This project uses software originally created by PrismaticTobias.
-https://github.com/YOUR-USERNAME/YOUR-REPOSITORY
+https://github.com/brawlbeach500-dotcom/RCEAnimationMigrator
 ```
 
 You may use alternative wording as long as the attribution clearly identifies
