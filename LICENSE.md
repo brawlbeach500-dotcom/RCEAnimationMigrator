@@ -78,7 +78,7 @@ original GitHub repository.
 The original repository for the Software is:
 
 **PrismaticTobias:**
-`[INSERT YOUR GITHUB REPOSITORY URL HERE]`
+`[[OFFICAL ORIGINAL REPOSITORY]](https://github.com/brawlbeach500-dotcom/RCEAnimationMigrator)`
 
 If the Software is redistributed or incorporated into another project, a link
 to the original repository should be retained where reasonably possible.
