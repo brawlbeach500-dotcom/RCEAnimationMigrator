@@ -40,6 +40,20 @@ Marketplace.
 
 ---
 
+## Important: group-owned games must publish to the Group, not a personal account
+
+**If the place you have open is owned by a Group, you must set "Upload to" to that Group.**
+Publishing under "My Account (User)" is broken for group-owned games — every upload will fail.
+This isn't optional or a preference, it's a hard requirement tied to how the place itself is owned.
+
+The plugin now detects this automatically: on the **Setup** tab, if the current place is
+group-owned and you're not already set to publish to that group, a warning banner appears with a
+**"Use this Group"** button that switches "Upload to" and fills in the correct Group ID for you in
+one click. The same check also runs live in the onboarding wizard's setup-check page. If you ever
+see repeated `PermissionDenied`-style failures, this is the first thing to check.
+
+---
+
 ## Quick start walkthrough
 
 Full step-by-step from a fresh Studio install to your first migration run:
@@ -145,18 +159,23 @@ The panel is split into three tabs — **Setup**, **Migrate**, and **Log** — p
 
 Shown automatically the first time the plugin loads (and reachable later via **Guide**): a short
 walkthrough of what the plugin does, the one-time beta-feature requirement with a manual checklist
-you can tick off, a **live setup check** (see below) that re-runs whenever you land on that page,
-and a final "you're ready" page. Skip it anytime; your progress and confirmations are remembered.
+you can tick off (including a note about group-owned games needing Group upload), a **live setup
+check** (see below) that re-runs whenever you land on that page, and a final "you're ready" page.
+Skip it anytime; your progress and confirmations are remembered.
 
 ### Setup tab
 
 - **Upload to:** choose **My Account (User)** (default) or **Group**. Selecting Group reveals a
   Group ID field. Your choice and Group ID are remembered between sessions.
+- **Group-ownership warning:** if the open place is owned by a Group and you're not already
+  publishing to it, a banner appears here explaining why User upload won't work for this place,
+  with a one-click **Use this Group** button that switches the upload target and Group ID for you.
 - **Theme:** **Dark**, **Light**, or **Match Studio** (default) — Match Studio mirrors Studio's
   own theme colors live, including if you switch Studio's theme while the panel is open.
-- **Setup check:** live, auto-detected status for the source folder, destination folder, and the
-  `CreateAssetAsync` engine API, plus a **Re-check** button and the same manual beta-feature
-  checklist from the wizard. This refreshes automatically after every Scan too.
+- **Setup check:** live, auto-detected status for the source folder, destination folder, the
+  `CreateAssetAsync` engine API, and place ownership vs. your current upload target, plus a
+  **Re-check** button and the same manual beta-feature checklist from the wizard. This refreshes
+  automatically after every Scan and whenever you change the upload target or Group ID, too.
 
 ### Migrate tab
 
@@ -224,10 +243,14 @@ The beta feature isn't enabled (or Studio wasn't restarted after enabling it). S
 above.
 
 **`PermissionDenied` (or similar `Enum.CreateAssetResult` failure)**
-The logged-in Studio account doesn't have permission to publish assets for this place/group.
-Confirm you can publish an animation manually via Studio's built-in Animation Editor (Avatar tab
-→ Animation Editor → open a KeyframeSequence → Publish) to rule out account-level issues first.
-If using Group upload, confirm your account has asset-creation permissions in that group.
+First check whether this place is owned by a Group and you're uploading under **My Account**
+instead — that's broken and will always fail for a group-owned game. The Setup tab flags this
+automatically with a "Use this Group" fix; see "Important: group-owned games..." near the top of
+this README. If that's not it, the logged-in Studio account may not have permission to publish
+assets for this place/group — confirm you can publish an animation manually via Studio's built-in
+Animation Editor (Avatar tab → Animation Editor → open a KeyframeSequence → Publish) to rule out
+account-level issues, and if using Group upload, confirm your account has asset-creation
+permissions in that group.
 
 **A burst of failures partway through a large batch**
 Expected and handled automatically — those items just keep retrying with backoff (watch "Retrying

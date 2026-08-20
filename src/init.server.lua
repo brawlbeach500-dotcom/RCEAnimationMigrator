@@ -34,6 +34,29 @@ local RETRY_MAX_DELAY = 30 -- seconds; backoff never waits longer than this betw
 -- just maximum parallelism.
 
 ----------------------------------------------------------------------
+-- Game ownership
+----------------------------------------------------------------------
+-- If this place is owned by a Group, uploads MUST be published to that
+-- Group -- publishing under your personal account is broken/rejected for
+-- group-owned games. Detected once up front so the Setup tab and wizard
+-- can warn about it and offer a one-click fix.
+
+local function getGameOwnerInfo(): (string, number?)
+	local ok, creatorType, creatorId = pcall(function()
+		return game.CreatorType, game.CreatorId
+	end)
+	if not ok then
+		return "Unknown", nil
+	end
+	if creatorType == Enum.CreatorType.Group then
+		return "Group", creatorId
+	end
+	return "User", creatorId
+end
+
+local GAME_OWNER_TYPE, GAME_OWNER_ID = getGameOwnerInfo()
+
+----------------------------------------------------------------------
 -- Settings persistence
 ----------------------------------------------------------------------
 
@@ -511,6 +534,8 @@ end
 ----------------------------------------------------------------------
 
 local openWizard: () -> ()
+local runSetupCheck: () -> ()
+local refreshGroupOwnerBanner: () -> ()
 
 ----------------------------------------------------------------------
 -- Root layout
@@ -710,13 +735,91 @@ local uploadTargetSeg = makeSegmented(
 		uploadTargetIsGroup = (i == 2)
 		groupRow.Visible = uploadTargetIsGroup
 		setSetting("RCEAnimationMigrator_UploadIsGroup", uploadTargetIsGroup)
+		refreshGroupOwnerBanner()
+		runSetupCheck()
 	end
 )
+
+local function currentGroupIdNumber(): number?
+	local text = groupIdBox.Text:gsub("%s+", "")
+	if text == "" then
+		return nil
+	end
+	return tonumber(text)
+end
+
+groupIdBox:GetPropertyChangedSignal("Text"):Connect(function()
+	refreshGroupOwnerBanner()
+	runSetupCheck()
+end)
+
+-- Group-ownership warning banner: if this place is owned by a Group, using
+-- "My Account" instead of that Group is broken and every upload will fail.
+local groupOwnerBanner = Instance.new("Frame")
+groupOwnerBanner.Size = UDim2.new(1, 0, 0, 0)
+groupOwnerBanner.AutomaticSize = Enum.AutomaticSize.Y
+groupOwnerBanner.LayoutOrder = 3
+groupOwnerBanner.Visible = false
+groupOwnerBanner.Parent = uploadPanel
+setThemedProp(groupOwnerBanner, "BackgroundColor3", "WARN_DIM")
+corner(groupOwnerBanner, 6)
+stroke(groupOwnerBanner, "WARN")
+
+local groupOwnerBannerPad = Instance.new("UIPadding")
+groupOwnerBannerPad.PaddingTop = UDim.new(0, 10)
+groupOwnerBannerPad.PaddingBottom = UDim.new(0, 10)
+groupOwnerBannerPad.PaddingLeft = UDim.new(0, 12)
+groupOwnerBannerPad.PaddingRight = UDim.new(0, 12)
+groupOwnerBannerPad.Parent = groupOwnerBanner
+
+local groupOwnerBannerLayout = Instance.new("UIListLayout")
+groupOwnerBannerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+groupOwnerBannerLayout.Padding = UDim.new(0, 8)
+groupOwnerBannerLayout.Parent = groupOwnerBanner
+
+local groupOwnerBannerText = makeLabel(groupOwnerBanner, "", UDim2.new(1, 0, 0, 0), {
+	TextSize = 12,
+	Wrapped = true,
+})
+groupOwnerBannerText.AutomaticSize = Enum.AutomaticSize.Y
+groupOwnerBannerText.LayoutOrder = 1
+
+local useGroupButton = makeButton(groupOwnerBanner, "Use this Group", UDim2.new(0, 150, 0, 26), "WARN", true)
+useGroupButton.LayoutOrder = 2
+
+refreshGroupOwnerBanner = function()
+	if GAME_OWNER_TYPE == "Group" and GAME_OWNER_ID then
+		local matches = uploadTargetIsGroup and currentGroupIdNumber() == GAME_OWNER_ID
+		groupOwnerBanner.Visible = not matches
+		groupOwnerBannerText.Text = (
+			"This place is owned by Group %d. Publishing under your personal account is broken for a "
+			.. "group-owned game -- you must publish to this Group instead."
+		):format(GAME_OWNER_ID)
+	else
+		groupOwnerBanner.Visible = false
+	end
+end
+
+useGroupButton.MouseButton1Click:Connect(function()
+	if not GAME_OWNER_ID then
+		return
+	end
+	uploadTargetIsGroup = true
+	uploadTargetSeg.setSelected(2)
+	groupRow.Visible = true
+	groupIdBox.Text = tostring(GAME_OWNER_ID)
+	setSetting("RCEAnimationMigrator_UploadIsGroup", true)
+	setSetting("RCEAnimationMigrator_GroupId", groupIdBox.Text)
+	refreshGroupOwnerBanner()
+	runSetupCheck()
+end)
+
+refreshGroupOwnerBanner()
 
 local speedInfoRow = Instance.new("Frame")
 speedInfoRow.Size = UDim2.new(1, 0, 0, 16)
 speedInfoRow.BackgroundTransparency = 1
-speedInfoRow.LayoutOrder = 3
+speedInfoRow.LayoutOrder = 4
 speedInfoRow.Parent = uploadPanel
 makeLabel(
 	speedInfoRow,
@@ -795,13 +898,14 @@ stroke(recheckButton, "BORDER")
 
 -- Registered so the wizard's live-check page can share the exact same
 -- detection logic and stay in sync with the Setup tab.
-local autoCheckHandleSets: { { source: any, dest: any, engine: any } } = {}
+local autoCheckHandleSets: { { source: any, dest: any, engine: any, ownership: any } } = {}
 
 local function buildAutoChecklistInto(parent: Instance, orderOffset: number)
 	local sourceCheck = makeAutoCheckRow(parent, orderOffset + 1, ("Source folder: ReplicatedFirst/%s"):format(table.concat(SOURCE_PATH, "/")))
 	local destCheck = makeAutoCheckRow(parent, orderOffset + 2, ("Destination folder: ReplicatedStorage/%s"):format(table.concat(DEST_PATH, "/")))
 	local engineCheck = makeAutoCheckRow(parent, orderOffset + 3, "AssetService:CreateAssetAsync engine API")
-	local handles = { source = sourceCheck, dest = destCheck, engine = engineCheck }
+	local ownershipCheck = makeAutoCheckRow(parent, orderOffset + 4, "Place ownership vs. upload target")
+	local handles = { source = sourceCheck, dest = destCheck, engine = engineCheck, ownership = ownershipCheck }
 	table.insert(autoCheckHandleSets, handles)
 	return handles
 end
@@ -818,7 +922,7 @@ local function resolvePath(rootInst: Instance, pathParts: { string }): Instance?
 	return current
 end
 
-local function runSetupCheck()
+runSetupCheck = function()
 	local sourceRoot = resolvePath(ReplicatedFirst, SOURCE_PATH)
 	local destRoot = resolvePath(ReplicatedStorage, DEST_PATH)
 	local hasCreateAsset = typeof((AssetService :: any).CreateAssetAsync) == "function"
@@ -847,7 +951,31 @@ local function runSetupCheck()
 		else
 			handles.engine.setStatus("fail", "CreateAssetAsync API not found -- update Roblox Studio.")
 		end
+
+		if GAME_OWNER_TYPE == "Group" and GAME_OWNER_ID then
+			if uploadTargetIsGroup and currentGroupIdNumber() == GAME_OWNER_ID then
+				handles.ownership.setStatus(
+					"ok",
+					("This place is owned by Group %d and you're set to publish there. Good."):format(GAME_OWNER_ID)
+				)
+			else
+				handles.ownership.setStatus(
+					"fail",
+					("This place is owned by Group %d -- publishing under your personal account is broken here. "
+						.. "Set \"Upload to\" to Group and Group ID to %d (or use the button above)."):format(
+						GAME_OWNER_ID,
+						GAME_OWNER_ID
+					)
+				)
+			end
+		elseif GAME_OWNER_TYPE == "User" then
+			handles.ownership.setStatus("ok", "This place is owned by your personal account -- User upload is correct.")
+		else
+			handles.ownership.setStatus("warn", "Could not determine this place's ownership.")
+		end
 	end
+
+	refreshGroupOwnerBanner()
 end
 
 buildAutoChecklistInto(checklistPanel, 1)
@@ -856,7 +984,7 @@ recheckButton.MouseButton1Click:Connect(runSetupCheck)
 
 local checklistManualHeader = Instance.new("Frame")
 checklistManualHeader.Size = UDim2.new(1, 0, 0, 1)
-checklistManualHeader.LayoutOrder = 5
+checklistManualHeader.LayoutOrder = 6
 checklistManualHeader.Parent = checklistPanel
 setThemedProp(checklistManualHeader, "BackgroundColor3", "BORDER")
 
@@ -865,7 +993,7 @@ local checkHttpConfirmed = getSetting("RCEAnimationMigrator_CheckHttp", false) :
 
 makeCheckRow(
 	checklistPanel,
-	6,
+	7,
 	"I enabled the \"CreateAssetAsync\" beta feature (File -> Beta Features) and restarted Studio.",
 	checkBetaConfirmed,
 	function(checked)
@@ -876,7 +1004,7 @@ makeCheckRow(
 
 makeCheckRow(
 	checklistPanel,
-	7,
+	8,
 	"(Optional) I allowed HTTP Requests in Game Settings -> Security.",
 	checkHttpConfirmed,
 	function(checked)
@@ -1957,6 +2085,17 @@ makeCheckRow(
 		setSetting("RCEAnimationMigrator_CheckHttp", checked)
 	end
 )
+do
+	local groupNote = wizardBody(
+		wizardPage2,
+		5,
+		"One more thing: if this place is owned by a Group, you must publish to that Group -- publishing "
+			.. "under your personal account is broken for group-owned games and every upload will fail. The "
+			.. "live check on the next page will tell you whether that applies here, and the Setup tab has a "
+			.. "one-click \"Use this Group\" fix if it does."
+	)
+	setThemedProp(groupNote, "TextColor3", "WARN")
+end
 
 -- Page 3: Live setup check
 local wizardPage3 = makeWizardPage()
